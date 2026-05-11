@@ -1,12 +1,11 @@
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { useAccount, useBalance, useDisconnect, useNetwork } from 'wagmi'
+import { useAccount, useBalance, useDisconnect } from 'wagmi'
 import { useState } from 'react'
 
 export default function Terminal() {
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, chain } = useAccount()
   const { data: balance } = useBalance({ address })
   const { disconnect } = useDisconnect()
-  const { chain } = useNetwork()
   const [copied, setCopied] = useState(false)
 
   const copyAddress = () => {
