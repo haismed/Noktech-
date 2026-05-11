@@ -1,0 +1,76 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- User Rules ---
+    match /users/{uid} {
+      allow get: if isOwner(uid) || isAdmin();
+      allow list: if isAdmin();
+      
+      // Client can only create their initial profile once
+      allow create: if isSignedIn() && isOwner(uid) && 
+                      request.resource.data.keys().hasAll(['uid', 'email', 'withdrawableBalance', 'investmentBalance', 'purchasedAdBalance', 'isAdmin']) &&
+                      request.resource.data.withdrawableBalance == 0 &&
+                      request.resource.data.investmentBalance == 0 &&
+                      request.resource.data.purchasedAdBalance == 0 &&
+                      request.resource.data.isAdmin == false;
+      
+      // NO standard update of balances from client
+      allow update: if isOwner(uid) && 
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'profilePic']);
+    }
+
+    // --- Transaction Rules ---
+    match /transactions/{txId} {
+      allow get: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid || 
+        isAdmin()
+      );
+      
+      allow list: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid || 
+        resource.data.receiverId == request.auth.uid || 
+        isAdmin()
+      );
+      
+      // Client CANNOT write transactions. Only backend does.
+      allow write: if false;
+    }
+
+    // --- Phase Rules ---
+    match /phases/{phaseId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // --- System Stats ---
+    match /system/stats {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "NokTek Wallet & Economy",
+  "description": "An advanced multi-wallet internal economy system with server-side validation, transactional integrity, and a dynamic phase-based reward distribution engine.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "AI-powered fraud detection",
+    "Real-time economy dashboard",
+    "Multi-wallet architecture"
+  ]
+}

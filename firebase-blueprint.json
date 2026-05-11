@@ -1,0 +1,90 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account and wallet balances",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "trustScore": { "type": "number" },
+        "withdrawableBalance": { "type": "number" },
+        "investmentBalance": { "type": "number" },
+        "purchasedAdBalance": { "type": "number" },
+        "totalEarned": { "type": "number" },
+        "currentPhaseTransfers": { "type": "number" },
+        "currentPhaseOperations": { "type": "number" },
+        "isAdmin": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "withdrawableBalance", "investmentBalance", "purchasedAdBalance"]
+    },
+    "Transaction": {
+      "title": "Wallet Transaction",
+      "description": "Immutable log of wallet movements",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "amount": { "type": "number" },
+        "fee": { "type": "number" },
+        "type": { "type": "string", "enum": ["TRANSFER", "CONVERSION", "PURCHASE", "REWARD", "BOOST"] },
+        "sourceWallet": { "type": "string", "enum": ["WITHDRAWABLE", "INVESTMENT", "PURCHASED_AD"] },
+        "destWallet": { "type": "string", "enum": ["WITHDRAWABLE", "INVESTMENT", "PURCHASED_AD", "EXTERNAL"] },
+        "status": { "type": "string", "enum": ["PENDING", "COMPLETED", "FAILED", "FLAGGED"] },
+        "phaseId": { "type": "string" },
+        "fraudScore": { "type": "number" },
+        "deviceFingerprint": { "type": "string" },
+        "ipMetadata": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "amount", "type", "timestamp"]
+    },
+    "Phase": {
+      "title": "Economy Phase",
+      "description": "Tracking the current distribution lifecycle",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "totalPool": { "type": "number" },
+        "distributed": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["totalPool", "distributed", "isActive"]
+    },
+    "SystemStats": {
+      "title": "System Statistics",
+      "description": "Aggregated data for the admin dashboard",
+      "type": "object",
+      "properties": {
+        "circulatingSupply": { "type": "number" },
+        "lockedSupply": { "type": "number" },
+        "withdrawnSupply": { "type": "number" },
+        "adSupply": { "type": "number" },
+        "totalUsers": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles and balances"
+    },
+    "/transactions/{txId}": {
+      "schema": "Transaction",
+      "description": "History of all wallet movements"
+    },
+    "/phases/{phaseId}": {
+      "schema": "Phase",
+      "description": "Economy phases"
+    },
+    "/system/stats": {
+      "schema": "SystemStats",
+      "description": "Global economy metrics"
+    }
+  }
+}
