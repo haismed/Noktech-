@@ -1,69 +1,74 @@
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { useAccount, useBalance, useChainId, useChains } from 'wagmi';
-import { Link } from 'react-router-dom';
-import { Copy } from 'lucide-react';
+import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { useAccount, useBalance, useDisconnect, useChainId, useChains } from 'wagmi'
+import { useState } from 'react'
 
 export default function Terminal() {
-  const { address, isConnected, chainId } = useAccount();
-  const { data: balance } = useBalance({ address });
-  const chains = useChains();
-  const currentChain = chains.find((c) => c.id === chainId);
+  const { address, isConnected } = useAccount()
+  const { disconnect } = useDisconnect()
+  const chainId = useChainId()
+  const chains = useChains()
+  const chain = chains.find((c) => c.id === chainId)
+  const { data: balance } = useBalance({ address })
+  const [copied, setCopied] = useState(false)
 
-  const copyToClipboard = () => {
-    if (address) navigator.clipboard.writeText(address);
-  };
+  const copyAddress = () => {
+    if (address) {
+      navigator.clipboard.writeText(address)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  if (!isConnected) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-white text-2xl font-mono mb-8">NOKTEK TERMINAL</h1>
+          <ConnectButton />
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col items-center justify-center p-4 font-mono">
-      {!isConnected ? (
-        <div className="border border-[#1F1F1F] bg-[#0A0A0A] p-8 max-w-sm w-full space-y-6 text-center">
-            <h1 className="text-xl font-bold uppercase tracking-tighter">NOKTEK TERMINAL</h1>
-            <p className="text-sm text-gray-400">Connect your wallet to access the economy</p>
-            <div className="flex justify-center">
-                <ConnectButton label="Connect Wallet" chainStatus="none" accountStatus="avatar" />
-            </div>
-            <Link to="/" className='block text-xs text-gray-500 hover:text-white underline'>Back to Home</Link>
-        </div>
-      ) : (
-        <div className="w-full max-w-2xl space-y-6">
-          {/* Header */}
-          <div className="flex justify-between items-center bg-[#0A0A0A] p-4 border border-[#1F1F1F] rounded-sm">
-            <h1 className="text-xl font-bold uppercase tracking-tighter">NOKTEK TERMINAL</h1>
-            <ConnectButton showBalance={false} />
-          </div>
+    <div className="min-h-screen bg-[#0A0A0A] text-white font-mono p-4">
+      <header className="flex justify-between items-center mb-8 border-b border-[#1F1F1F] pb-4">
+        <h1 className="text-xl">NOKTEK TERMINAL</h1>
+        <button onClick={() => disconnect()} className="bg-red-600 px-4 py-2 rounded text-sm">
+          Disconnect
+        </button>
+      </header>
 
-          {/* Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Wallet Card */}
-            <div className="border border-[#1F1F1F] p-4 space-y-2">
-                <p className="text-xs text-gray-500 uppercase">Wallet</p>
-                <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm truncate">{address?.slice(0, 6)}...{address?.slice(-4)}</p>
-                    <button onClick={copyToClipboard} className="text-gray-400 hover:text-white"><Copy size={14} /></button>
-                </div>
-            </div>
-            
-            {/* ETH Balance Card */}
-            <div className="border border-[#1F1F1F] p-4 space-y-2">
-                <p className="text-xs text-gray-500 uppercase">ETH Balance</p>
-                <p className="text-sm">{balance?.formatted} {balance?.symbol}</p>
-            </div>
-
-            {/* NOK Balance Card */}
-            <div className="border border-[#1F1F1F] p-4 space-y-2">
-                <p className="text-xs text-gray-500 uppercase">NOK Balance</p>
-                <p className="text-sm">0.00 NOK</p>
-                <button disabled className="w-full py-1 text-[10px] bg-[#2563EB] text-white uppercase disabled:opacity-50">Claim Testnet NOK</button>
-            </div>
-          </div>
-
-          {/* Footer */}
-          <div className="text-xs text-gray-500 bg-[#0A0A0A] p-4 border border-[#1F1F1F] rounded-sm flex justify-between">
-            <span>Network: {currentChain?.name || 'Unknown'}</span>
-            <Link to="/" className='hover:text-white underline'>Back to Home</Link>
+      <div className="grid gap-4 max-w-2xl mx-auto">
+        <div className="border border-[#1F1F1F] rounded p-4">
+          <div className="text-gray-400 text-sm mb-2">Wallet</div>
+          <div className="flex justify-between items-center">
+            <span>{address?.slice(0, 6)}...{address?.slice(-4)}</span>
+            <button onClick={copyAddress} className="bg-[#1F1F1F] px-3 py-1 rounded text-sm">
+              {copied ? 'Copied!' : 'Copy'}
+            </button>
           </div>
         </div>
-      )}
+
+        <div className="border border-[#1F1F1F] rounded p-4">
+          <div className="text-gray-400 text-sm mb-2">ETH Balance</div>
+          <div className="text-2xl">{balance ? parseFloat(balance.formatted).toFixed(4) : '0.0000'} ETH</div>
+        </div>
+
+        <div className="border border-[#1F1F1F] rounded p-4">
+          <div className="text-gray-400 text-sm mb-2">NOK Balance</div>
+          <div className="flex justify-between items-center">
+            <span className="text-2xl">0.00 NOK</span>
+            <button disabled className="bg-[#2563EB] opacity-50 px-4 py-2 rounded text-sm cursor-not-allowed">
+              Claim Testnet NOK
+            </button>
+          </div>
+        </div>
+
+        <div className="text-center text-gray-500 text-sm mt-4">
+          Network: {chain?.name || 'Mainnet'}
+        </div>
+      </div>
     </div>
-  );
+  )
 }
