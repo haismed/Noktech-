@@ -49,4 +49,24 @@ export default function Terminal() {
         </div>
 
         <div className="border border-[#1F1F1F] rounded p-4">
-          <div className="text-gray-400
+          <div className="text-gray-400 text-sm mb-2">ETH Balance</div>
+          <div className="text-2xl">{balance ? parseFloat(balance.formatted).toFixed(4) : '0.0000'} ETH</div>
+        </div>
+
+        <div className="border border-[#1F1F1F] rounded p-4">
+          <div className="text-gray-400 text-sm mb-2">NOK Balance</div>
+          <div className="flex justify-between items-center">
+            <span className="text-2xl">0.00 NOK</span>
+            <button disabled className="bg-[#2563EB] opacity-50 px-4 py-2 rounded text-sm cursor-not-allowed">
+              Claim Testnet NOK
+            </button>
+          </div>
+        </div>
+      </main>
+
+      <div className="text-center text-gray-500 text-sm mt-8">
+        Network: {chain?.name || 'Ethereum'}
+      </div>
+    </div>
+  )
+}
