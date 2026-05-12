@@ -1,118 +1,280 @@
-import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { useAccount, useBalance, useDisconnect, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
-import { useState } from 'react'
+"use client";
 
-// Faucet contract ABI - only the claim function
-const faucetAbi = [
-  {
-    "inputs": [],
-    "name": "claim",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  }
-] as const
+import { useAuth } from "@/context/auth-context";
+import { db } from "@/lib/firebase";
+import { doc, updateDoc, increment, addDoc, collection, serverTimestamp } from "firebase/firestore";
+import {
+  Heart, MessageCircle, Share2, MoreHorizontal, Flag,
+  ShieldCheck, Lock, PlayCircle, Star, Sparkles, Zap,
+  CheckCircle2, Copy, Send, Rocket, RefreshCw, Facebook, Twitter
+} from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { formatDistanceToNow } from "date-fns";
+import { ar } from "date-fns/locale";
+import { useToast } from "@/hooks/use-toast";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Badge } from "@/components/ui/badge";
+import { rewardEngagement, getEngagement, recordShareClick } from "@/lib/engagement-service";
+import { canUserFeaturePost, getRemainingTime, featurePost } from "@/lib/featured-service";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useState, useEffect, useRef } from "react";
+import { Progress } from "@/components/ui/progress";
+import * as VisuallyHidden from "@radix-ui/react-visually-hidden";
+import BoostModal from "./BoostModal";
+import { formatTextWithHashtags } from "@/lib/hashtag-service";
 
-// Sepolia Testnet Faucet - للتجربة فقط
-// هذا عقد عام على Sepolia تقدر تستدعي claim() منه
-const FAUCET_ADDRESS = '0xFf36E3e7F8E52C0A5eF25b4f6b3b2A21a4B12c08' 
+interface PostCardProps {
+  post: any;
+  onLikeOverride?: () => void;
+  likeDisabled?: boolean;
+  externalEngData?: any;
+}
 
-export default function Terminal() {
-  const { address, isConnected, chain } = useAccount()
-  const { data: balance } = useBalance({ address })
-  const { disconnect } = useDisconnect()
-  const [copied, setCopied] = useState(false)
-  
-  // Contract write hook
-  const { writeContract, data: hash, isPending, error } = useWriteContract()
-  
-  // Wait for transaction confirmation
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash })
+export default function PostCard({ post, onLikeOverride, likeDisabled, externalEngData }: PostCardProps) {
+  const { user, userData } = useAuth();
+  const { toast } = useToast();
+  const router = useRouter();
+  const [isFeatureLoading, setIsFeatureLoading] = useState(false);
+  const [localEngData, setLocalEngData] = useState<any>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isBoostOpen, setIsBoostOpen] = useState(false);
+  const [isReposting, setIsReposting] = useState(false);
 
-  // Copy wallet address
-  const copyAddress = () => {
-    if (address) {
-      navigator.clipboard.writeText(address)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+  // === نظام المكافآت والقفل التدريجي الجديد ===
+  const [viewSeconds, setViewSeconds] = useState(0);
+  const [rewardClaimed, setRewardClaimed] = useState(false);
+  const [likeUnlocked, setLikeUnlocked] = useState(false);
+  const [commentUnlocked, setCommentUnlocked] = useState(false);
+  const [shareUnlocked, setShareUnlocked] = useState(false);
+  const [likeTimer, setLikeTimer] = useState(0);
+  const [commentTimer, setCommentTimer] = useState(0);
+  const intervalRef = useRef<NodeJS.Timeout>();
+  const rewardIntervalRef = useRef<NodeJS.Timeout>();
+
+  const engData = externalEngData || localEngData;
+
+  useEffect(() => {
+    if (user &&!externalEngData) {
+      getEngagement(post.id, user.uid).then(setLocalEngData);
     }
-  }
+  }, [user, post.id, externalEngData]);
 
-  // Call claim function on the contract
-  const handleClaim = () => {
-    writeContract({
-      address: FAUCET_ADDRESS,
-      abi: faucetAbi,
-      functionName: 'claim',
-    })
-  }
+  // عداد المشاهدة + استدعاء API للمكافأة
+  useEffect(() => {
+    if (!user ||!post?.id) return;
 
-  // UI before wallet connection
-  if (!isConnected) {
-    return (
-      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-white text-3xl font-mono mb-8 tracking-wider">NOKTEK TERMINAL</h1>
-          <ConnectButton />
-        </div>
-      </div>
-    )
-  }
+    const checkReward = async () => {
+      try {
+        const res = await fetch('/api/reward', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.uid, postId: post.id, type: 'view' })
+        });
+        const data = await res.json();
 
-  // UI after connection
+        if (data.seconds) setViewSeconds(data.seconds);
+
+        if (data.status === 'rewarded' &&!rewardClaimed) {
+          setRewardClaimed(true);
+          setLikeUnlocked(true);
+          toast({ title: "مبروك 🎉", description: "ربحت 0.01 نقطة من المشاهدة" });
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+
+    checkReward();
+    intervalRef.current = setInterval(() => {
+      setViewSeconds(prev => prev + 1);
+    }, 1000);
+
+    rewardIntervalRef.current = setInterval(checkReward, 5000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (rewardIntervalRef.current) clearInterval(rewardIntervalRef.current);
+    };
+  }, [user, post?.id, rewardClaimed, toast]);
+
+  const handleLike = async () => {
+    if (!likeUnlocked) {
+      toast({ title: "انتظر", description: "شاهد المنشور أكثر لتفعيل الإعجاب" });
+      return;
+    }
+    if (onLikeOverride) return onLikeOverride();
+
+    try {
+      await rewardEngagement(post.id, user.uid, 'like');
+      const newData = await getEngagement(post.id, user.uid);
+      setLocalEngData(newData);
+    } catch (e) {
+      toast({ title: "خطأ", description: "فشل الإعجاب" });
+      console.error(e);
+    }
+  };
+
+  const handleComment = () => {
+    if (!commentUnlocked) {
+      toast({ title: "انتظر", description: "شاهد المنشور أكثر لتفعيل التعليق" });
+      return;
+    }
+    router.push(`/post/${post.id}`);
+  };
+
+  const handleShare = () => {
+    if (!shareUnlocked) {
+      toast({ title: "انتظر", description: "شاهد المنشور أكثر لتفعيل المشاركة" });
+      return;
+    }
+    setIsShareModalOpen(true);
+  };
+
+  const handleFeature = async () => {
+    if (!user) return;
+    setIsFeatureLoading(true);
+    try {
+      const canFeature = await canUserFeaturePost(user.uid);
+      if (!canFeature) {
+        const time = await getRemainingTime(user.uid);
+        toast({ title: "انتظر", description: `يمكنك التمييز بعد ${time}` });
+        return;
+      }
+      await featurePost(post.id, user.uid);
+      toast({ title: "تم", description: "تم تمييز المنشور بنجاح" });
+    } catch (e) {
+      toast({ title: "خطأ", description: "فشل تمييز المنشور" });
+      console.error(e);
+    } finally {
+      setIsFeatureLoading(false);
+    }
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(`${window.location.origin}/post/${post.id}`);
+    toast({ title: "تم النسخ", description: "تم نسخ رابط المنشور" });
+    setIsShareModalOpen(false);
+  };
+
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white font-mono p-4">
-      <header className="flex justify-between items-center mb-8 border-b border-[#1F1F1F] pb-4">
-        <h1 className="text-xl tracking-wider">NOKTEK TERMINAL</h1>
-        <button onClick={() => disconnect()} className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm transition">
-          Disconnect
-        </button>
-      </header>
-
-      <main className="max-w-2xl mx-auto space-y-4">
-        <div className="border border-[#1F1F1F] rounded p-4">
-          <div className="text-gray-400 text-sm mb-2">Wallet Address</div>
-          <div className="flex justify-between items-center">
-            <span className="text-lg">{address?.slice(0,6)}...{address?.slice(-4)}</span>
-            <button onClick={copyAddress} className="bg-[#1F1F1F] hover:bg-[#2A2A2A] px-3 py-1 rounded text-sm">
-              {copied ? 'Copied!' : 'Copy'}
-            </button>
+    <div className="border rounded-lg p-4 bg-card mb-4">
+      <div className="flex items-center gap-3 mb-3">
+        <Avatar>
+          <AvatarImage src={post.author?.avatar} />
+          <AvatarFallback>{post.author?.name?.[0] || 'U'}</AvatarFallback>
+        </Avatar>
+        <div className="flex-1">
+          <div className="font-semibold flex items-center gap-1">
+            {post.author?.name}
+            {post.author?.verified && <ShieldCheck className="w-4 h-4 text-blue-500" />}
+          </div>
+          <div className="text-sm text-muted-foreground">
+            {post.createdAt?.toDate? formatDistanceToNow(post.createdAt.toDate(), { addSuffix: true, locale: ar }) : 'الآن'}
           </div>
         </div>
 
-        <div className="border border-[#1F1F1F] rounded p-4">
-          <div className="text-gray-400 text-sm mb-2">ETH Balance</div>
-          <div className="text-2xl">{balance ? parseFloat(balance.formatted).toFixed(4) : '0.0000'} ETH</div>
-        </div>
-
-        <div className="border border-[#1F1F1F] rounded p-4">
-          <div className="text-gray-400 text-sm mb-2">NOK Balance</div>
-          <div className="flex justify-between items-center">
-            <span className="text-2xl">0.00 NOK</span>
-            <button 
-              onClick={handleClaim}
-              disabled={isPending || isConfirming}
-              className="bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 rounded text-sm transition"
-            >
-              {isPending ? 'Confirm in Wallet...' : isConfirming ? 'Claiming...' : isSuccess ? 'Claimed!' : 'Claim Testnet NOK'}
-            </button>
-          </div>
-          {hash && (
-            <div className="text-xs text-gray-500 mt-2">
-              Tx: {hash.slice(0,10)}...{hash.slice(-8)}
-            </div>
-          )}
-          {error && (
-            <div className="text-xs text-red-500 mt-2">
-              Error: {error.shortMessage || 'Transaction failed'}
-            </div>
-          )}
-        </div>
-      </main>
-
-      <div className="text-center text-gray-500 text-sm mt-8">
-        Network: {chain?.name || 'Ethereum'}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon">
+              <MoreHorizontal className="w-4 h-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleCopyLink}>
+              <Copy className="w-4 h-4 mr-2" />
+              نسخ الرابط
+            </DropdownMenuItem>
+            <DropdownMenuItem>
+              <Flag className="w-4 h-4 mr-2" />
+              إبلاغ
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
+
+      {post.featured && (
+        <Badge className="mb-2 bg-yellow-500">
+          <Star className="w-3 h-3 mr-1" />
+          منشور مميز
+        </Badge>
+      )}
+
+      <div
+        className="mb-4 whitespace-pre-wrap"
+        dangerouslySetInnerHTML={{ __html: formatTextWithHashtags(post.content) }}
+      />
+
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleLike}
+          disabled={likeDisabled ||!likeUnlocked}
+          className={engData?.liked? "text-red-500" : ""}
+        >
+          <Heart className={`w-4 h-4 mr-1 ${engData?.liked? "fill-current" : ""}`} />
+          {engData?.likes || 0}
+        </Button>
+
+        <Button variant="ghost" size="sm" onClick={handleComment} disabled={!commentUnlocked}>
+          <MessageCircle className="w-4 h-4 mr-1" />
+          {engData?.comments || 0}
+        </Button>
+
+        <Button variant="ghost" size="sm" onClick={handleShare} disabled={!shareUnlocked}>
+          <Share2 className="w-4 h-4 mr-1" />
+          {engData?.shares || 0}
+        </Button>
+
+        {userData?.canFeature && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleFeature}
+            disabled={isFeatureLoading}
+          >
+            <Zap className="w-4 h-4 mr-1" />
+            {isFeatureLoading? <RefreshCw className="w-4 h-4 animate-spin" /> : "تمييز"}
+          </Button>
+        )}
+
+        {!rewardClaimed && (
+          <div className="flex items-center gap-2 text-xs ml-auto">
+            <Lock className="w-3 h-3" />
+            <span>{Math.max(0, 10 - viewSeconds)}ث</span>
+            <Progress value={(viewSeconds / 10) * 100} className="w-16 h-1" />
+          </div>
+        )}
+      </div>
+
+      <BoostModal open={isBoostOpen} onOpenChange={setIsBoostOpen} postId={post.id} />
+
+      <Dialog open={isShareModalOpen} onOpenChange={setIsShareModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>مشاركة المنشور</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-2">
+            <Button onClick={handleCopyLink}>
+              <Copy className="w-4 h-4 mr-2" />
+              نسخ الرابط
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
-  )
+  );
 }
